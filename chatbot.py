@@ -2,10 +2,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
                           CallbackContext, CallbackQueryHandler)
 from ChatGPT_HKBU import HKBU_ChatGPT
+from flask import Flask, Response
 import configparser
 import redis
 import logging
 import mysql.connector
+import threading
 
 global redis1
 global chatgpt
@@ -13,6 +15,14 @@ global sql1
 
 # 全局变量声明（但不初始化）
 global redis1, chatgpt, sql1
+
+
+app = Flask(__name__)  # Flask app instance
+ 
+@app.route("/")
+def health_check():
+    """Health check endpoint."""
+    return Response("OK", status=200)
 
 # 定义奖励规则
 REWARDS = {
@@ -33,11 +43,19 @@ def test_mysql_connection():
         exit(1)  # 如果连接失败，退出程序
     return sql1
 
+def ignore_sigterm(signum, frame):
+    logging.info("SIGTERM signal received but ignored.")
 
 def main():
     # 初始化配置
     config = configparser.ConfigParser()
     config.read('config.ini')
+
+    flask_thread = threading.Thread(target=app.run, kwargs={'host': '0.0.0.0', 'port': 80, 'debug':False, 'use_reloader': False})
+    flask_thread.daemon = True  # Daemonize thread
+    flask_thread.start()
+
+    
 
     # 初始化 MySQL
     global sql1
@@ -53,8 +71,10 @@ def main():
         print(f"MySQL 连接失败: {e}")
         exit(1)
 
-    updater = Updater(token=(config['TELEGRAM']['ACCESS_TOKEN']), use_context=True)
+    updater = Updater(token=(config['TELEGRAM']['ACCESS_TOKEN']), use_context=True, user_sig_handler=ignore_sigterm)
     dispatcher = updater.dispatcher
+
+
     # 检查是否成功读取到 [MYSQL] 节
     if 'MYSQL' not in config:
         print("错误: config.ini 中未找到 [MYSQL] 配置节！")
